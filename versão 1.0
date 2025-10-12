@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Texto para Áudio</title>
+</head>
+<body>
+    <h1>Transforme Texto em Áudio</h1>
+
+    <textarea id="texto-digitado" rows="30" cols="150" placeholder="Digite seu texto aqui..."></textarea> <br> 
+    <button onclick="converterTextoEmAudio()">Converter para Áudio</button>
+
+    <script>
+        function converterTextoEmAudio() {
+            const texto = document.getElementById('texto-digitado').value.trim();
+
+            // Remover barras e possíveis espaços extras
+            const textoLimpo = texto.replace(/\//g, '').trim();
+
+            if (textoLimpo === "") {
+                alert("Por favor, digite algum texto.");
+                return;
+            }
+
+            const msg = new SpeechSynthesisUtterance(textoLimpo);
+            msg.lang = 'pt-BR';
+
+            window.speechSynthesis.speak(msg);
+
+            msg.onend = () => {
+                alert('A reprodução de áudio foi finalizada. Obrigado pela preferência.');
+            };
+        }
+    </script>
+</body>
+</html>
