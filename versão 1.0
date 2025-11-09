@@ -1,37 +1,145 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Texto para Áudio</title>
-</head>
-<body>
-    <h1>Transforme Texto em Áudio</h1>
+import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
-    <textarea id="texto-digitado" rows="30" cols="150" placeholder="Digite seu texto aqui..."></textarea> <br> 
-    <button onclick="converterTextoEmAudio()">Converter para Áudio</button>
+void main() => runApp(TextoParaAudioApp());
 
-    <script>
-        function converterTextoEmAudio() {
-            const texto = document.getElementById('texto-digitado').value.trim();
+class TextoParaAudioApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Texto para Áudio',
+      theme: ThemeData(primarySwatch: Colors.blue),
+      home: TextoParaAudioPage(),
+    );
+  }
+}
 
-            // Remover barras e possíveis espaços extras
-            const textoLimpo = texto.replace(/\//g, '').trim();
+class TextoParaAudioPage extends StatefulWidget {
+  @override
+  _TextoParaAudioPageState createState() => _TextoParaAudioPageState();
+}
 
-            if (textoLimpo === "") {
-                alert("Por favor, digite algum texto.");
-                return;
-            }
+class _TextoParaAudioPageState extends State<TextoParaAudioPage> {
+  final FlutterTts flutterTts = FlutterTts();
+  final TextEditingController textoController = TextEditingController();
+  double velocidade = 1.0;
+  List<dynamic> vozes = [];
+  String? vozSelecionada;
 
-            const msg = new SpeechSynthesisUtterance(textoLimpo);
-            msg.lang = 'pt-BR';
+  @override
+  void initState() {
+    super.initState();
+    carregarVozes();
+  }
 
-            window.speechSynthesis.speak(msg);
+  Future<void> carregarVozes() async {
+    vozes = await flutterTts.getVoices;
+    setState(() {});
+  }
 
-            msg.onend = () => {
-                alert('A reprodução de áudio foi finalizada. Obrigado pela preferência.');
-            };
-        }
-    </script>
-</body>
-</html>
+  String limparTexto(String texto) {
+    texto = texto.replaceAll('/', '').trim();
+    texto = texto.replaceAll(RegExp(r'([\u2190-\u21FF]|[\u2300-\u23FF]|[\u2600-\u26FF]|[\u2700-\u27BF]|[\u2B00-\u2BFF]|[\uD83C-\uDBFF\uDC00-\uDFFF])'), '');
+
+    final numerosPorExtenso = [
+      "primeiro", "segundo", "terceiro", "quarto", "quinto",
+      "sexto", "sétimo", "oitavo", "nono", "décimo"
+    ];
+
+    texto = texto.replaceAllMapped(RegExp(r'^(\d+)\.\s*', multiLine: true), (match) {
+      final index = int.parse(match.group(1)!) - 1;
+      return index >= 0 && index < numerosPorExtenso.length
+          ? '${numerosPorExtenso[index]}: '
+          : match.group(0)!;
+    });
+
+    return texto;
+  }
+
+  Future<void> reproduzirAudio() async {
+    String texto = limparTexto(textoController.text);
+    if (texto.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Por favor, digite algum texto.')));
+      return;
+    }
+
+    await flutterTts.setLanguage("pt-BR");
+    await flutterTts.setSpeechRate(velocidade);
+
+    if (vozSelecionada != null) {
+      await flutterTts.setVoice({"name": 'vozSelecionada'});
+    }
+
+    await flutterTts.speak(texto);
+    flutterTts.setCompletionHandler(() {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('A reprodução de áudio foi finalizada.')));
+    });
+  }
+
+  void pausarAudio() => flutterTts.pause();
+  //void retomarAudio() => flutterTts.resume();
+  void cancelarAudio() => flutterTts.stop();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold( 
+      appBar: AppBar(title: Text('Transforme Texto em Áudio')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: textoController,
+                maxLines: null,
+                expands: true,
+                decoration: InputDecoration(
+                  hintText: 'Digite seu texto aqui...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            SizedBox(height: 16),
+            Row(
+              children: [
+                Text('Velocidade da fala:'),
+                Expanded(
+                  child: Slider(
+                    value: velocidade,
+                    min: 0.5,
+                    max: 2.0,
+                    divisions: 15,
+                    label: velocidade.toStringAsFixed(1),
+                    onChanged: (value) => setState(() => velocidade = value),
+                  ),
+                ),
+              ],
+            ),
+            DropdownButton<String>(
+              value: vozSelecionada,
+              hint: Text('Escolha a voz'),
+              isExpanded: true,
+              items: vozes.map<DropdownMenuItem<String>>((voz) {
+                return DropdownMenuItem<String>(
+                  value: voz['name'],
+                  child: Text('${voz['name']} (${voz['locale']})'),
+                );
+              }).toList(),
+              onChanged: (value) => setState(() => vozSelecionada = value),
+            ),
+            SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              children: [
+                ElevatedButton(onPressed: reproduzirAudio, child: Text('▶️ Reproduzir')),
+                ElevatedButton(onPressed: pausarAudio, child: Text('⏸️ Pausar')),
+                //ElevatedButton(onPressed: retomarAudio, child: Text('⏯️ Retomar')),
+                ElevatedButton(onPressed: cancelarAudio, child: Text('⏹️ Cancelar')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
