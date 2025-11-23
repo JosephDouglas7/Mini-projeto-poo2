@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
+import 'package:flutter_tts/flutter_tts.dart'; 
+import 'package:flutter_sound/flutter_sound.dart';
+import 'package:permission_handler/permission_handler.dart'; 
 
 void main() => runApp(TextoParaAudioApp());
 
@@ -20,21 +22,36 @@ class TextoParaAudioPage extends StatefulWidget {
 }
 
 class _TextoParaAudioPageState extends State<TextoParaAudioPage> {
-  final FlutterTts flutterTts = FlutterTts();
+  late FlutterTts flutterTts;
   final TextEditingController textoController = TextEditingController();
   double velocidade = 1.0;
   List<dynamic> vozes = [];
   String? vozSelecionada;
 
+  late FlutterSoundRecorder recorder;
+  bool isRecording = false;
+
   @override
   void initState() {
     super.initState();
+    flutterTts = FlutterTts();
+    recorder = FlutterSoundRecorder();
+    initRecorder();
     carregarVozes();
   }
 
   Future<void> carregarVozes() async {
     vozes = await flutterTts.getVoices;
     setState(() {});
+  }
+
+  Future<void> initRecorder() async {
+    var status = await Permission.microphone.request();
+    if (status != PermissionStatus.granted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Permissão de microfone negada.')));
+      return;
+    }
+    await recorder.openRecorder();
   }
 
   String limparTexto(String texto) {
@@ -56,29 +73,64 @@ class _TextoParaAudioPageState extends State<TextoParaAudioPage> {
     return texto;
   }
 
+  Future<void> baixarAudio() async {
+    String texto = limparTexto(textoController.text);
+    if (texto.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Digite algum texto.')));
+      return;
+    }
+
+    final path = 'audio_texto.aac';
+
+    await recorder.startRecorder(toFile: path);
+    isRecording = true;
+
+    await flutterTts.setLanguage("pt-BR");
+    await flutterTts.setSpeechRate(velocidade);
+    if (vozSelecionada != null) {
+      await flutterTts.setVoice({"name": 'vozSelecionada', "locale": "pt-BR"});
+    }
+
+    await flutterTts.speak(texto);
+
+    flutterTts.setCompletionHandler(() async {
+      if (isRecording) {
+        await recorder.stopRecorder();
+        isRecording = false;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Áudio salvo como $path')));
+      }
+    });
+  }
+
   Future<void> reproduzirAudio() async {
     String texto = limparTexto(textoController.text);
     if (texto.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Por favor, digite algum texto.')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Digite algum texto.')));
       return;
     }
 
     await flutterTts.setLanguage("pt-BR");
     await flutterTts.setSpeechRate(velocidade);
-
     if (vozSelecionada != null) {
-      await flutterTts.setVoice({"name": 'vozSelecionada'});
+      await flutterTts.setVoice({"name": 'vozSelecionada', "locale": "pt-BR"});
     }
 
     await flutterTts.speak(texto);
+
     flutterTts.setCompletionHandler(() {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('A reprodução de áudio foi finalizada.')));
     });
   }
 
   void pausarAudio() => flutterTts.pause();
-  //void retomarAudio() => flutterTts.resume();
   void cancelarAudio() => flutterTts.stop();
+
+  @override
+  void dispose() {
+    flutterTts.stop();
+    recorder.closeRecorder();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -133,8 +185,8 @@ class _TextoParaAudioPageState extends State<TextoParaAudioPage> {
               children: [
                 ElevatedButton(onPressed: reproduzirAudio, child: Text('▶️ Reproduzir')),
                 ElevatedButton(onPressed: pausarAudio, child: Text('⏸️ Pausar')),
-                //ElevatedButton(onPressed: retomarAudio, child: Text('⏯️ Retomar')),
-                ElevatedButton(onPressed: cancelarAudio, child: Text('⏹️ Cancelar')),
+                ElevatedButton(onPressed: cancelarAudio, child: Text('⏹️ Cancelar')), 
+                ElevatedButton(onPressed: baixarAudio, child: Text('⬇️ Baixar Áudio')),
               ],
             ),
           ],
