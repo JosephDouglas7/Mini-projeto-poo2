@@ -1,0 +1,247 @@
+/Correções de erros com auxilio do https://copilot.microsoft.com
+
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+
+void main() => runApp(TextoParaAudioApp());
+
+class TextoParaAudioApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Texto para Áudio',
+      theme: ThemeData(primarySwatch: Colors.blue),
+      home: TextoParaAudioPage(),
+    );
+  }
+}
+
+class TextoParaAudioPage extends StatefulWidget {
+  @override
+  _TextoParaAudioPageState createState() => _TextoParaAudioPageState();
+}
+
+class _TextoParaAudioPageState extends State<TextoParaAudioPage> {
+  late FlutterTts flutterTts;
+  late Future<void> _initFuture;
+
+  final TextEditingController textoController = TextEditingController();
+
+  double velocidade = 1.0; // 0.6 - 1.4 recomendado
+  double pitch = 1.0; // 0.8 - 1.4 recomendado
+  double volume = 1.0; // 0.0 - 1.0
+  List<dynamic> vozes = [];
+  String? vozSelecionada;
+
+  @override
+  void initState() {
+    super.initState();
+    flutterTts = FlutterTts();
+    _initFuture = _initTts();
+  }
+
+  Future<void> _initTts() async {
+    try {
+      await flutterTts.awaitSpeakCompletion(true);
+    } catch (_) {
+      // alguns backends podem não suportar awaitSpeakCompletion; ignorar
+    }
+
+    try {
+      final result = await flutterTts.getVoices;
+      if (result is List) vozes = result;
+      if (vozes.isNotEmpty && vozSelecionada == null) {
+        final first = vozes.first;
+        if (first is Map && first['name'] != null) {
+          vozSelecionada = first['name'].toString();
+        }
+      }
+    } catch (_) {
+      vozes = [];
+    }
+
+    if (mounted) setState(() {});
+  }
+
+  String _limparTexto(String texto) {
+    texto = texto.replaceAll('/', '').trim();
+    texto = texto.replaceAll(
+      RegExp(
+        r'([\u2190-\u21FF]|[\u2300-\u23FF]|[\u2600-\u26FF]|[\u2700-\u27BF]|[\u2B00-\u2BFF]|[\uD83C-\uDBFF\uDC00-\uDFFF])',
+      ),
+      '',
+    );
+    return texto;
+  }
+
+  String _ensureEndingPunctuation(String s) {
+    s = s.trim();
+    if (s.isEmpty) return s;
+    final last = s[s.length - 1];
+    if ('.!?'.contains(last)) return s;
+    return '$s.';
+  }
+
+  /// Reproduz o texto digitado. Usa texto plano para máxima compatibilidade.
+  Future<void> reproduzirAudio() async {
+    await _initFuture;
+
+    String raw = _limparTexto(textoController.text);
+    if (raw.isEmpty) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Digite algum texto.')));
+      return;
+    }
+
+    raw = _ensureEndingPunctuation(raw);
+
+    final originalPitch = pitch;
+    final originalVolume = volume;
+    final originalRate = velocidade;
+
+    try {
+      await flutterTts.setLanguage("pt-BR");
+      await flutterTts.setSpeechRate(velocidade);
+      await flutterTts.setPitch(pitch);
+      await flutterTts.setVolume(volume);
+
+      if (vozSelecionada != null) {
+        await flutterTts.setVoice({"name": vozSelecionada!, "locale": "pt-BR"});
+      }
+
+      // Falar texto plano (não SSML) para evitar leitura de tags ou falhas em alguns backends
+      await flutterTts.speak(raw);
+
+      // tentar aguardar conclusão quando suportado
+      try {
+        await flutterTts.awaitSpeakCompletion(true);
+      } catch (_) {
+        // ignorar se não suportado
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao falar: $e')));
+    } finally {
+      // restaura parâmetros originais (tenta)
+      try {
+        await flutterTts.setPitch(originalPitch);
+        await flutterTts.setVolume(originalVolume);
+        await flutterTts.setSpeechRate(originalRate);
+      } catch (_) {}
+      // limpa handler se houver
+      try {
+        flutterTts.setCompletionHandler(() {});
+      } catch (_) {}
+    }
+  }
+
+  void pausarAudio() {
+    try {
+      flutterTts.pause();
+    } catch (_) {}
+  }
+
+  void cancelarAudio() {
+    try {
+      flutterTts.stop();
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    try {
+      flutterTts.stop();
+    } catch (_) {}
+    textoController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dropdownItems = vozes.map<DropdownMenuItem<String>>((voz) {
+      final name = (voz is Map && voz['name'] != null) ? voz['name'].toString() : voz.toString();
+      final locale = (voz is Map && voz['locale'] != null) ? voz['locale'].toString() : '';
+      return DropdownMenuItem<String>(
+        value: name,
+        child: Text(locale.isNotEmpty ? '$name ($locale)' : name),
+      );
+    }).toList();
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Transforme Texto em Áudio')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: textoController,
+                maxLines: null,
+                expands: true,
+                decoration: const InputDecoration(
+                  hintText: 'Digite seu texto aqui...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(children: [
+              const Text('Velocidade'),
+              Expanded(
+                child: Slider(
+                  value: velocidade,
+                  min: 0.6,
+                  max: 1.4,
+                  divisions: 16,
+                  label: velocidade.toStringAsFixed(2),
+                  onChanged: (v) => setState(() => velocidade = v),
+                ),
+              ),
+            ]),
+            Row(children: [
+              const Text('Pitch'),
+              Expanded(
+                child: Slider(
+                  value: pitch,
+                  min: 0.8,
+                  max: 1.4,
+                  divisions: 12,
+                  label: pitch.toStringAsFixed(2),
+                  onChanged: (v) => setState(() => pitch = v),
+                ),
+              ),
+            ]),
+            Row(children: [
+              const Text('Volume'),
+              Expanded(
+                child: Slider(
+                  value: volume,
+                  min: 0.0,
+                  max: 1.0,
+                  divisions: 10,
+                  label: volume.toStringAsFixed(2),
+                  onChanged: (v) => setState(() => volume = v),
+                ),
+              ),
+            ]),
+            DropdownButton<String>(
+              value: vozSelecionada,
+              hint: const Text('Escolha a voz'),
+              isExpanded: true,
+              items: dropdownItems,
+              onChanged: dropdownItems.isEmpty ? null : (value) => setState(() => vozSelecionada = value),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 10,
+              children: [
+                ElevatedButton(onPressed: reproduzirAudio, child: const Text('▶️ Reproduzir')),
+                ElevatedButton(onPressed: pausarAudio, child: const Text('⏸️ Pausar')),
+                ElevatedButton(onPressed: cancelarAudio, child: const Text('⏹️ Cancelar')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
